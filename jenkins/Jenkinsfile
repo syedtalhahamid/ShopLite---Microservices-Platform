@@ -1,0 +1,60 @@
+pipeline {
+  agent any
+  environment {
+    AWS_REGION = 'us-east-1'
+    ECR_ACCOUNT = '123456789012'         // replace
+    ECR_REPO_BASE = "${ECR_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com/shoplite"
+  }
+
+  stages {
+    stage('Checkout') {
+      steps { git url: 'https://github.com/your-org/shoplite.git', branch: 'main' }
+    }
+
+    stage('Build Images') {
+      steps {
+        sh 'docker build -t auth:latest ./microservices/auth'
+        sh 'docker build -t product:latest ./microservices/product'
+        sh 'docker build -t order:latest ./microservices/order'
+      }
+    }
+
+    stage('Login to ECR') {
+      steps {
+        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-creds']]) {
+          sh '''
+            aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin ${ECR_ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com
+          '''
+        }
+      }
+    }
+
+    stage('Tag & Push') {
+      steps {
+        sh '''
+          docker tag auth:latest ${ECR_REPO_BASE}-auth:latest
+          docker tag product:latest ${ECR_REPO_BASE}-product:latest
+          docker tag order:latest ${ECR_REPO_BASE}-order:latest
+          docker push ${ECR_REPO_BASE}-auth:latest
+          docker push ${ECR_REPO_BASE}-product:latest
+          docker push ${ECR_REPO_BASE}-order:latest
+        '''
+      }
+    }
+
+    stage('Deploy to Kubernetes') {
+      steps {
+        // requires kubeconfig configured on Jenkins agent with cluster-admin for demo
+        sh 'kubectl apply -f k8s/namespace.yaml'
+        sh 'kubectl apply -f k8s/auth-deployment.yaml'
+        sh 'kubectl apply -f k8s/product-deployment.yaml'
+        sh 'kubectl apply -f k8s/order-deployment.yaml'
+      }
+    }
+  }
+
+  post {
+    success { echo "Pipeline succeeded" }
+    failure { echo "Pipeline failed" }
+  }
+}

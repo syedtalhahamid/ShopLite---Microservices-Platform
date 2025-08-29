@@ -1,0 +1,35 @@
+# Deployment for auth service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth
+  namespace: shoplite
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: auth }
+  template:
+    metadata:
+      labels: { app: auth }
+    spec:
+      containers:
+      - name: auth
+        image: <ECR_REPO>/auth:latest    # replace at deploy time
+        ports: [{ containerPort: 5000 }]
+        readinessProbe:
+          httpGet: { path: "/", port: 5000 }
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+# Service to expose auth internally
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth
+  namespace: shoplite
+spec:
+  selector: { app: auth }
+  ports:
+  - port: 5000
+    targetPort: 5000
+  type: ClusterIP
